@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Coverage
+coverage/
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Auto-generated files
+*.min.js
+*.min.css
+*.map
+
+# Prisma migrations
+prisma/migrations/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Cache
+.cache/
+
+# Environment files
+.env*
+!.env.example
+
+# Markdown that shouldn't be formatted
+CHANGELOG.md
+
+# Generated API docs
+docs/api/
+
+# Storybook
+storybook-static/
+
+# Test snapshots
+**/__snapshots__/
+
+# GraphQL generated
+**/*.generated.ts

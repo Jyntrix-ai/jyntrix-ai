@@ -1,0 +1,144 @@
+# Dependencies
+node_modules/
+
+# Python
+venv/
+.venv/
+env/
+.env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Testing
+.jest/
+test-results/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.lnk
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Docker
+docker-compose.override.yml
+
+# Vercel
+.vercel/
+
+# Prisma
+prisma/migrations/**/migration_lock.toml
+
+# Package manager locks (keep only one)
+# Uncomment the ones you don't use
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Debug
+.debug/
+
+# Storybook
+storybook-static/
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# Misc
+*.bak
+*.backup
+*.orig
+.husky/_/

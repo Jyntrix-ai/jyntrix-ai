@@ -1,0 +1,62 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "cache": true
+    },
+    "clean": {
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env.test"],
+      "cache": true
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "db:generate": {
+      "cache": false
+    },
+    "db:push": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    }
+  },
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "PINECONE_API_KEY",
+    "PINECONE_ENVIRONMENT",
+    "PINECONE_INDEX_NAME",
+    "NEO4J_URI",
+    "NEO4J_USER",
+    "NEO4J_PASSWORD"
+  ],
+  "globalPassThroughEnv": [
+    "CI",
+    "VERCEL",
+    "VERCEL_ENV"
+  ]
+}
