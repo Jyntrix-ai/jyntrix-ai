@@ -18,6 +18,11 @@ from arq.connections import RedisSettings
 from src.config import config
 from src.db.redis import get_redis_settings
 from src.db.qdrant import get_qdrant_client
+from src.tasks.analytics_task import (
+    aggregate_daily_analytics,
+    cleanup_old_analytics,
+    process_analytics_stream,
+)
 from src.tasks.embedding_task import generate_batch_embeddings, generate_embedding
 from src.tasks.extraction_task import extract_entities, extract_entities_batch
 from src.tasks.summary_task import (
@@ -103,6 +108,18 @@ async def scheduled_idle_summary(ctx: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# Scheduled task: Aggregate daily analytics
+async def scheduled_daily_analytics(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Cron job to aggregate previous day's analytics."""
+    return await aggregate_daily_analytics(ctx)
+
+
+# Scheduled task: Cleanup old analytics
+async def scheduled_analytics_cleanup(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Cron job to cleanup old analytics data."""
+    return await cleanup_old_analytics(ctx)
+
+
 class WorkerSettings:
     """
     ARQ Worker Settings class.
@@ -131,6 +148,10 @@ class WorkerSettings:
         summarize_conversation,
         summarize_batch,
         trigger_summary_for_idle_conversations,
+        # Analytics tasks
+        aggregate_daily_analytics,
+        cleanup_old_analytics,
+        process_analytics_stream,
     ]
 
     # Cron jobs for scheduled tasks
@@ -139,6 +160,21 @@ class WorkerSettings:
         cron(
             scheduled_idle_summary,
             minute={0, 15, 30, 45},
+            run_at_startup=False,
+        ),
+        # Aggregate analytics daily at 01:00 UTC
+        cron(
+            scheduled_daily_analytics,
+            hour=1,
+            minute=0,
+            run_at_startup=False,
+        ),
+        # Cleanup old analytics weekly on Sunday at 02:00 UTC
+        cron(
+            scheduled_analytics_cleanup,
+            weekday=6,  # Sunday
+            hour=2,
+            minute=0,
             run_at_startup=False,
         ),
     ]

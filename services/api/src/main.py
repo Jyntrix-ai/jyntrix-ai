@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.config import settings
-from src.routers import auth, chat, health, memory, profile
+from src.routers import analytics, auth, chat, health, memory, profile
 
 # Configure logging
 logging.basicConfig(
@@ -162,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
     app.include_router(memory.router, prefix="/api/memories", tags=["Memory"])
     app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
+    app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
 
     return app
 

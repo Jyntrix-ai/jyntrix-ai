@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     # ARQ Background Tasks
     arq_redis_url: str = Field(default="redis://localhost:6379/1")
 
+    # Analytics
+    analytics_enabled: bool = Field(default=True, description="Enable analytics collection")
+    analytics_buffer_size: int = Field(default=10, description="Max records to buffer before flush")
+    analytics_flush_interval: int = Field(default=10, description="Seconds between auto-flushes")
+    analytics_retention_days: int = Field(default=90, description="Days to retain analytics data")
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: str | list[str]) -> list[str]:

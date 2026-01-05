@@ -9,6 +9,8 @@ This is the CRITICAL service that handles:
 6. Stream LLM response
 7. Save assistant response
 8. Enqueue ARQ task for memory extraction
+
+Analytics instrumentation tracks timing for each phase.
 """
 
 import asyncio
@@ -23,6 +25,14 @@ from qdrant_client import QdrantClient
 from redis.asyncio import Redis
 from supabase import Client as SupabaseClient
 
+from src.analytics import (
+    AnalyticsCollector,
+    QueryAnalysisMetrics,
+    emit_analytics,
+    get_collector,
+    set_collector,
+    track_span,
+)
 from src.config import settings
 from src.core.context_builder import ContextBuilder
 from src.core.hybrid_ranker import HybridRanker
@@ -82,6 +92,8 @@ class ChatService:
         7. Save assistant response
         8. Enqueue memory extraction task
 
+        Analytics instrumentation tracks timing for each phase.
+
         Args:
             user_id: Current user ID
             content: Message content
@@ -93,24 +105,40 @@ class ChatService:
         """
         start_time = time.time()
 
-        try:
-            # Step 1: Get or create conversation
-            if conversation_id:
-                conversation = await self._get_conversation(user_id, conversation_id)
-                if not conversation:
-                    yield {"type": "error", "error": "Conversation not found"}
-                    return
-            else:
-                conversation = await self._create_conversation(user_id)
-                conversation_id = conversation["id"]
-
-            # Step 2: Save user message
-            user_message = await self._save_message(
-                conversation_id=conversation_id,
+        # Initialize analytics collector
+        collector: AnalyticsCollector | None = None
+        if settings.analytics_enabled:
+            collector = AnalyticsCollector(
+                request_id=str(uuid4()),
                 user_id=user_id,
-                role=MessageRole.USER,
-                content=content,
+                request_type="chat_stream",
             )
+            set_collector(collector)
+
+        try:
+            # Step 1: Get or create conversation (SETUP phase)
+            async with track_span("setup"):
+                if conversation_id:
+                    conversation = await self._get_conversation(user_id, conversation_id)
+                    if not conversation:
+                        yield {"type": "error", "error": "Conversation not found"}
+                        return
+                else:
+                    conversation = await self._create_conversation(user_id)
+                    conversation_id = conversation["id"]
+
+                # Save user message
+                user_message = await self._save_message(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    role=MessageRole.USER,
+                    content=content,
+                )
+
+                # Track conversation and message IDs
+                if collector:
+                    collector.set_conversation(conversation_id)
+                    collector.set_message(user_message["id"])
 
             # Yield metadata event
             yield {
@@ -120,63 +148,96 @@ class ChatService:
                 "user_message_saved": True,
             }
 
-            # Step 3: Analyze query
-            query_analysis = await self.query_analyzer.analyze(content)
+            # Step 2: Analyze query
+            async with track_span("query_analysis") as span:
+                query_analysis = await self.query_analyzer.analyze(content)
 
-            # Step 4: Multi-strategy retrieval (if memory enabled)
+                # Record query analysis metrics
+                if collector and span:
+                    collector.record_query_analysis(QueryAnalysisMetrics(
+                        intent=query_analysis.intent,
+                        requires_memory=query_analysis.requires_memory,
+                        keywords_count=len(query_analysis.keywords),
+                        entities_count=len(query_analysis.entities_mentioned),
+                        time_reference=query_analysis.time_reference,
+                        memory_types_needed=query_analysis.memory_types_needed or [],
+                        confidence=query_analysis.confidence,
+                    ))
+
+            # Step 3: Multi-strategy retrieval (if memory enabled)
             memory_context = None
             if include_memory and query_analysis.requires_memory:
-                memory_context = await self._retrieve_memories(
-                    user_id=user_id,
-                    query=content,
-                    analysis=query_analysis,
-                )
+                async with track_span("retrieval"):
+                    memory_context = await self._retrieve_memories(
+                        user_id=user_id,
+                        query=content,
+                        analysis=query_analysis,
+                    )
 
-            # Step 5: Get recent conversation history
+            # Step 4: Get recent conversation history
             conversation_history = await self._get_conversation_history(
                 conversation_id=conversation_id,
                 limit=10,  # Last 10 messages for context
             )
 
-            # Step 6: Build prompt context
-            system_prompt = self._build_system_prompt(memory_context)
-            messages = self._build_messages(
-                conversation_history=conversation_history,
-                current_message=content,
-                system_prompt=system_prompt,
-            )
+            # Step 5: Build prompt context
+            async with track_span("context_building"):
+                system_prompt = self._build_system_prompt(memory_context)
+                messages = self._build_messages(
+                    conversation_history=conversation_history,
+                    current_message=content,
+                    system_prompt=system_prompt,
+                )
 
-            # Step 7: Stream LLM response
+            # Step 6: Stream LLM response (track TTFB)
             full_response = ""
-            async for chunk in self.llm_client.stream_chat(messages):
-                if chunk.get("type") == "text":
-                    full_response += chunk.get("content", "")
-                    yield chunk
-                elif chunk.get("type") == "error":
-                    yield chunk
-                    return
+            first_chunk_received = False
+            llm_start_time = time.perf_counter()
 
-            # Step 8: Save assistant response
-            assistant_message = await self._save_message(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                role=MessageRole.ASSISTANT,
-                content=full_response,
-            )
+            async with track_span("llm_streaming") as llm_span:
+                async for chunk in self.llm_client.stream_chat(messages):
+                    if chunk.get("type") == "text":
+                        # Track time to first byte
+                        if not first_chunk_received and llm_span:
+                            ttfb_ms = (time.perf_counter() - llm_start_time) * 1000
+                            llm_span.metadata["ttfb_ms"] = ttfb_ms
+                            first_chunk_received = True
 
-            # Step 9: Update conversation
-            await self._update_conversation_metadata(
-                conversation_id=conversation_id,
-                message_count_increment=2,
-            )
+                        full_response += chunk.get("content", "")
+                        yield chunk
+                    elif chunk.get("type") == "error":
+                        if collector:
+                            collector.set_error(chunk.get("error", "LLM error"), "llm_error")
+                        yield chunk
+                        return
 
-            # Step 10: Enqueue memory extraction task (async, non-blocking)
-            await self._enqueue_memory_extraction(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                user_message_id=user_message["id"],
-                assistant_message_id=assistant_message["id"],
-            )
+                # Record chunk count
+                if llm_span:
+                    llm_span.metadata["response_length"] = len(full_response)
+
+            # Step 7: Save assistant response
+            async with track_span("save_response"):
+                assistant_message = await self._save_message(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    role=MessageRole.ASSISTANT,
+                    content=full_response,
+                )
+
+                # Update conversation
+                await self._update_conversation_metadata(
+                    conversation_id=conversation_id,
+                    message_count_increment=2,
+                )
+
+            # Step 8: Enqueue memory extraction task (async, non-blocking)
+            async with track_span("enqueue_tasks"):
+                await self._enqueue_memory_extraction(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    user_message_id=user_message["id"],
+                    assistant_message_id=assistant_message["id"],
+                )
 
             # Log performance
             elapsed = time.time() - start_time
@@ -184,7 +245,16 @@ class ChatService:
 
         except Exception as e:
             logger.error(f"Chat stream error: {e}")
+            if collector:
+                collector.set_error(str(e), type(e).__name__)
             yield {"type": "error", "error": str(e)}
+
+        finally:
+            # Emit analytics (non-blocking)
+            if collector:
+                analytics = collector.finalize()
+                asyncio.create_task(emit_analytics(analytics))
+                set_collector(None)  # Clean up context
 
     async def complete(
         self,

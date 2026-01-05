@@ -1,4 +1,8 @@
-"""Multi-strategy retrieval service for memory search."""
+"""Multi-strategy retrieval service for memory search.
+
+Analytics instrumentation tracks timing for each retrieval strategy
+using ParallelSpanTracker for concurrent operations.
+"""
 
 import asyncio
 import logging
@@ -9,6 +13,7 @@ from qdrant_client import QdrantClient
 from redis.asyncio import Redis
 from supabase import Client as SupabaseClient
 
+from src.analytics import ParallelSpanTracker, get_collector
 from src.config import settings
 from src.core.embeddings import get_embedding_service
 from src.core.graph_search import GraphSearch
@@ -50,7 +55,7 @@ class RetrievalService:
         """Run multiple retrieval strategies in parallel.
 
         This is the CRITICAL multi-strategy retrieval using asyncio.gather
-        for parallel execution.
+        for parallel execution. Analytics tracks timing for each strategy.
 
         Args:
             user_id: User ID for isolation
@@ -64,25 +69,57 @@ class RetrievalService:
         # Determine which memory types to search based on analysis
         memory_types = self._determine_memory_types(analysis)
 
-        # Run all strategies in parallel using asyncio.gather
+        # Initialize parallel span tracker for analytics
+        tracker = ParallelSpanTracker("parallel_retrieval")
+
+        # Run all strategies in parallel using asyncio.gather with tracking
         results = await asyncio.gather(
-            self._vector_retrieval(user_id, query, memory_types, limit_per_strategy),
-            self._keyword_retrieval(user_id, analysis.keywords, memory_types, limit_per_strategy),
-            self._entity_retrieval(user_id, analysis.entities_mentioned, limit_per_strategy),
-            self._profile_retrieval(user_id),
-            self._recent_context_retrieval(user_id, limit_per_strategy),
+            tracker.track(
+                "vector_search",
+                self._vector_retrieval(user_id, query, memory_types, limit_per_strategy),
+            ),
+            tracker.track(
+                "keyword_search",
+                self._keyword_retrieval(user_id, analysis.keywords, memory_types, limit_per_strategy),
+            ),
+            tracker.track(
+                "graph_search",
+                self._entity_retrieval(user_id, analysis.entities_mentioned, limit_per_strategy),
+            ),
+            tracker.track(
+                "profile_retrieval",
+                self._profile_retrieval(user_id),
+            ),
+            tracker.track(
+                "recent_context",
+                self._recent_context_retrieval(user_id, limit_per_strategy),
+            ),
             return_exceptions=True,
         )
+
+        # Strategy names for mapping results
+        strategy_names = ["vector", "keyword", "graph", "profile", "recent"]
 
         # Combine and process results
         combined_results = []
 
-        for i, result in enumerate(results):
+        for i, (strategy_name, result) in enumerate(zip(strategy_names, results)):
             if isinstance(result, Exception):
-                logger.error(f"Retrieval strategy {i} failed: {result}")
+                logger.error(f"Retrieval strategy {strategy_name} failed: {result}")
                 continue
+
             if result:
                 combined_results.extend(result)
+
+                # Record retrieval metrics for analytics
+                tracker.record_retrieval_metrics(strategy_name, result)
+
+        # Finalize tracking with aggregate metadata
+        tracker.finalize({
+            "total_results": len(combined_results),
+            "strategies_succeeded": sum(1 for r in results if not isinstance(r, Exception)),
+            "strategies_failed": sum(1 for r in results if isinstance(r, Exception)),
+        })
 
         logger.info(
             f"Multi-strategy retrieval returned {len(combined_results)} results "

@@ -111,20 +111,36 @@ class AuthService:
 
             logger.info(f"User logged in: {email}")
 
+            # Handle expires_in which may be string or int
+            expires_in_value = session.expires_in
+            if isinstance(expires_in_value, str):
+                expires_in_value = int(expires_in_value)
+            elif expires_in_value is None:
+                expires_in_value = 3600
+
+            # Parse created_at if present
+            created_at_dt = None
+            if user.created_at:
+                try:
+                    created_at_str = str(user.created_at)
+                    if created_at_str.endswith("Z"):
+                        created_at_str = created_at_str[:-1] + "+00:00"
+                    created_at_dt = datetime.fromisoformat(created_at_str)
+                except Exception as e:
+                    logger.warning(f"Failed to parse created_at: {user.created_at}, error: {e}")
+
             return LoginResponse(
                 access_token=session.access_token,
                 refresh_token=session.refresh_token,
                 token_type="bearer",
-                expires_in=session.expires_in or 3600,
+                expires_in=expires_in_value,
                 user=UserResponse(
-                    id=user.id,
+                    id=str(user.id),
                     email=user.email or "",
                     full_name=user.user_metadata.get("full_name"),
                     avatar_url=user.user_metadata.get("avatar_url"),
                     email_verified=user.email_confirmed_at is not None,
-                    created_at=datetime.fromisoformat(
-                        user.created_at.replace("Z", "+00:00")
-                    ) if user.created_at else None,
+                    created_at=created_at_dt,
                 ),
             )
 
