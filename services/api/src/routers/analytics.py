@@ -265,3 +265,32 @@ async def record_request_analytics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+
+@router.post(
+    "/flush",
+    summary="Force flush analytics buffer",
+    description="Debug endpoint to force flush buffered analytics to database",
+    include_in_schema=False,  # Hide from public docs
+)
+async def flush_analytics_buffer(
+    current_user: CurrentUser,
+) -> dict:
+    """Force flush buffered analytics (debug/testing use)."""
+    try:
+        from src.analytics.emitter import _emitter, flush_analytics
+
+        buffer_size = len(_emitter._buffer) if _emitter else 0
+        await flush_analytics()
+
+        return {
+            "status": "flushed",
+            "records_flushed": buffer_size,
+            "message": f"Flushed {buffer_size} buffered analytics records",
+        }
+    except Exception as e:
+        logger.error(f"Flush analytics error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )

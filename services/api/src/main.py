@@ -121,6 +121,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     logger.info("Shutting down application...")
+
+    # Flush remaining analytics data
+    if settings.analytics_enabled:
+        try:
+            from src.analytics.emitter import _emitter
+            if _emitter:
+                logger.info("Flushing remaining analytics data...")
+                await _emitter.shutdown()
+                logger.info("Analytics flush complete")
+        except Exception as e:
+            logger.error(f"Error flushing analytics: {e}")
+
     logger.info("Application shutdown complete")
 
 

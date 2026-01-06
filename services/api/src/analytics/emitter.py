@@ -59,6 +59,38 @@ class AnalyticsEmitter:
         self._flush_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
 
+    async def start(self) -> None:
+        """Start the periodic flush background task.
+
+        This should be called once during application startup to enable
+        automatic periodic flushing of buffered analytics.
+        """
+        if self._flush_task is None or self._flush_task.done():
+            self._flush_task = asyncio.create_task(self._periodic_flush())
+            logger.info(
+                f"Analytics emitter started with {self._flush_interval}s flush interval"
+            )
+
+    async def _periodic_flush(self) -> None:
+        """Background task that flushes buffer periodically.
+
+        This runs continuously until cancelled, flushing the buffer
+        at the configured interval. On cancellation (shutdown), it
+        performs a final flush to ensure no data is lost.
+        """
+        while True:
+            try:
+                await asyncio.sleep(self._flush_interval)
+                if self._buffer:  # Only flush if there's data
+                    await self._flush()
+            except asyncio.CancelledError:
+                # Final flush on shutdown
+                logger.info("Analytics emitter shutting down, performing final flush")
+                await self._flush()
+                break
+            except Exception as e:
+                logger.error(f"Periodic flush error: {e}")
+
     async def emit(self, analytics: RequestAnalytics) -> None:
         """Emit analytics record (non-blocking).
 
@@ -234,6 +266,9 @@ async def get_emitter() -> AnalyticsEmitter:
             buffer_size=getattr(settings, "analytics_buffer_size", 100),
             flush_interval=getattr(settings, "analytics_flush_interval", 10),
         )
+
+        # Auto-start the background flush task
+        await _emitter.start()
 
     return _emitter
 
