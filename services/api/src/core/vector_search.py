@@ -1,5 +1,6 @@
 """Vector search using Qdrant with user_id PRE-filtering."""
 
+import asyncio
 import logging
 from typing import Any, List
 
@@ -18,6 +19,10 @@ class VectorSearch:
     CRITICAL: All searches use user_id PRE-filtering to ensure
     strict data isolation between users.
     """
+
+    # Class-level embedding cache for repeated queries
+    _embedding_cache: dict[str, list] = {}
+    _cache_max_size: int = 100
 
     def __init__(self, client: QdrantClient):
         """Initialize vector search with Qdrant client.
@@ -52,8 +57,19 @@ class VectorSearch:
         Returns:
             List of search results with scores
         """
-        # Generate embedding for query
-        query_embedding = self.embedder.embed(query)
+        # Generate embedding for query (cached and non-blocking)
+        cache_key = f"{user_id}:{query}"
+        if cache_key in self._embedding_cache:
+            query_embedding = self._embedding_cache[cache_key]
+        else:
+            # Run embedding in thread pool to avoid blocking event loop
+            query_embedding = await asyncio.to_thread(self.embedder.embed, query)
+            # Cache the embedding
+            self._embedding_cache[cache_key] = query_embedding
+            # Limit cache size (simple FIFO eviction)
+            if len(self._embedding_cache) > self._cache_max_size:
+                oldest_key = next(iter(self._embedding_cache))
+                del self._embedding_cache[oldest_key]
 
         # Build filter conditions - user_id is REQUIRED
         must_conditions = [

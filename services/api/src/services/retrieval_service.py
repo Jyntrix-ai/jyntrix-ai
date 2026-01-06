@@ -224,7 +224,7 @@ class RetrievalService:
             if memory_types:
                 query = query.in_("type", memory_types)
 
-            response = query.limit(1000).execute()
+            response = query.limit(200).execute()  # Reduced from 1000 for performance
 
             if not response.data:
                 return []

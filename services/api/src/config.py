@@ -75,14 +75,14 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
 
-    # Token Budget
-    max_context_tokens: int = 8000
-    profile_memory_tokens: int = 1000
-    semantic_memory_tokens: int = 2500
-    episodic_memory_tokens: int = 2500
-    procedural_memory_tokens: int = 1000
-    entity_memory_tokens: int = 500
-    conversation_history_tokens: int = 500
+    # Token Budget (reduced ~40% for faster LLM processing)
+    max_context_tokens: int = 5000      # was 8000
+    profile_memory_tokens: int = 600    # was 1000
+    semantic_memory_tokens: int = 1500  # was 2500
+    episodic_memory_tokens: int = 1500  # was 2500
+    procedural_memory_tokens: int = 400 # was 1000
+    entity_memory_tokens: int = 300     # was 500
+    conversation_history_tokens: int = 300  # was 500
 
     # Hybrid Ranking Weights
     keyword_match_weight: float = 0.35

@@ -114,7 +114,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
 
-    # Initialize connections (lazy loading, actual connections happen on first use)
+    # Pre-warm embedding model (CRITICAL for performance)
+    # This prevents 30-40 second delays on first request
+    logger.info("Pre-loading embedding model...")
+    try:
+        from src.core.embeddings import get_embedding_service
+        embedding_service = get_embedding_service()
+        embedding_service._ensure_initialized()
+        logger.info("Embedding model loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to pre-load embedding model: {e}")
+
     logger.info("Application startup complete")
 
     yield
