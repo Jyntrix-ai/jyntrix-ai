@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { ChatInterface } from '@/components/chat/chat-interface';
+import { ChatSkeleton } from '@/components/ui/skeleton';
 import { useChatStore } from '@/stores/chat.store';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -10,7 +11,19 @@ import { api } from '@/lib/api';
 export default function ConversationPage() {
   const params = useParams();
   const conversationId = params.id as string;
-  const { setCurrentConversationId, setMessages } = useChatStore();
+
+  const currentConversationId = useChatStore((state) => state.currentConversationId);
+  const existingMessages = useChatStore((state) => state.messages);
+  const setCurrentConversationId = useChatStore((state) => state.setCurrentConversationId);
+  const setMessages = useChatStore((state) => state.setMessages);
+
+  // Check if we already have messages in store (from seamless new chat flow)
+  const hasExistingMessages = useMemo(() => {
+    return (
+      currentConversationId === conversationId &&
+      existingMessages.length > 0
+    );
+  }, [currentConversationId, conversationId, existingMessages.length]);
 
   // Fetch conversation details
   const { data: conversation, isLoading: conversationLoading } = useQuery({
@@ -19,27 +32,29 @@ export default function ConversationPage() {
     enabled: !!conversationId,
   });
 
-  // Fetch messages for this conversation
+  // Fetch messages for this conversation - skip if we already have them
   const { data: messages, isLoading: messagesLoading } = useQuery({
     queryKey: ['messages', conversationId],
     queryFn: () => api.messages.list(conversationId),
-    enabled: !!conversationId,
+    enabled: !!conversationId && !hasExistingMessages,
   });
 
-  // Set current conversation and messages in store
+  // Set current conversation ID
   useEffect(() => {
-    if (conversationId) {
+    if (conversationId && currentConversationId !== conversationId) {
       setCurrentConversationId(conversationId);
     }
-  }, [conversationId, setCurrentConversationId]);
+  }, [conversationId, currentConversationId, setCurrentConversationId]);
 
+  // Set messages in store only if we fetched new ones
   useEffect(() => {
-    if (messages) {
+    if (messages && !hasExistingMessages) {
       setMessages(messages);
     }
-  }, [messages, setMessages]);
+  }, [messages, hasExistingMessages, setMessages]);
 
-  const isLoading = conversationLoading || messagesLoading;
+  // Show skeleton only when we're actually loading
+  const isLoading = (conversationLoading || messagesLoading) && !hasExistingMessages;
 
   if (isLoading) {
     return (
@@ -51,19 +66,8 @@ export default function ConversationPage() {
           </div>
         </header>
 
-        {/* Loading state */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="typing-indicator text-text-muted dark:text-text-muted-dark">
-              <span />
-              <span />
-              <span />
-            </div>
-            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              Loading conversation...
-            </p>
-          </div>
-        </div>
+        {/* Chat skeleton */}
+        <ChatSkeleton />
       </div>
     );
   }

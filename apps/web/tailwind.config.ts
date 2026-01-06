@@ -108,11 +108,12 @@ const config: Config = {
         'inner-soft': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
       },
       animation: {
-        'fade-in': 'fadeIn 0.3s ease-in-out',
-        'slide-up': 'slideUp 0.3s ease-out',
-        'slide-down': 'slideDown 0.3s ease-out',
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'slide-up': 'slideUp 0.15s ease-out',
+        'slide-down': 'slideDown 0.15s ease-out',
         'pulse-soft': 'pulseSoft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'typing': 'typing 1.5s steps(3) infinite',
+        'blink': 'blink 1s step-end infinite',
       },
       keyframes: {
         fadeIn: {
@@ -120,11 +121,11 @@ const config: Config = {
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { transform: 'translateY(10px)', opacity: '0' },
+          '0%': { transform: 'translateY(8px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
         slideDown: {
-          '0%': { transform: 'translateY(-10px)', opacity: '0' },
+          '0%': { transform: 'translateY(-8px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
         pulseSoft: {
@@ -135,6 +136,10 @@ const config: Config = {
           '0%': { content: '.' },
           '33%': { content: '..' },
           '66%': { content: '...' },
+        },
+        blink: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0' },
         },
       },
       transitionDuration: {

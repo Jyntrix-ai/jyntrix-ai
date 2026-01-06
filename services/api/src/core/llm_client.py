@@ -88,8 +88,19 @@ class LLMClient:
                 )
             )
 
-            # Stream chunks
-            for chunk in response:
+            # Stream chunks - use to_thread for each iteration to avoid blocking
+            def get_next_chunk(iterator):
+                """Get the next chunk from the iterator."""
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    return None
+
+            iterator = iter(response)
+            while True:
+                chunk = await asyncio.to_thread(get_next_chunk, iterator)
+                if chunk is None:
+                    break
                 if chunk.text:
                     yield {
                         "type": "text",

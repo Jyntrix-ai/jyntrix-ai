@@ -67,7 +67,9 @@ async function streamRequest(
   endpoint: string,
   body: Record<string, unknown>,
   onChunk: (chunk: string) => void,
-  onDone?: () => void
+  onDone?: () => void,
+  onError?: (error: Error) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const token = await getAuthToken();
 
@@ -79,16 +81,21 @@ async function streamRequest(
       ...(token && { Authorization: `Bearer ${token}` }),
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `API error: ${response.status}`);
+    const err = new Error(error.message || `API error: ${response.status}`);
+    onError?.(err);
+    throw err;
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    throw new Error('No response body');
+    const err = new Error('No response body');
+    onError?.(err);
+    throw err;
   }
 
   const decoder = new TextDecoder();
@@ -116,14 +123,30 @@ async function streamRequest(
             const parsed = JSON.parse(data);
             if (parsed.content) {
               onChunk(parsed.content);
+            } else if (parsed.error) {
+              const err = new Error(parsed.error);
+              onError?.(err);
+              throw err;
             }
-          } catch {
+          } catch (e) {
+            // If it's our thrown error, rethrow it
+            if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
+              throw e;
+            }
             // Not JSON, treat as raw text
             onChunk(data);
           }
         }
       }
     }
+  } catch (error) {
+    // Handle abort specifically
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      // Stream was cancelled, this is expected
+      return;
+    }
+    onError?.(error instanceof Error ? error : new Error(String(error)));
+    throw error;
   } finally {
     reader.releaseLock();
   }
@@ -218,13 +241,17 @@ export const api = {
       conversationId: string,
       content: string,
       onChunk: (chunk: string) => void,
-      onDone?: () => void
+      onDone?: () => void,
+      onError?: (error: Error) => void,
+      signal?: AbortSignal
     ) =>
       streamRequest(
         `/api/chat/send`,
         { content, conversation_id: conversationId },
         onChunk,
-        onDone
+        onDone,
+        onError,
+        signal
       ),
   },
 

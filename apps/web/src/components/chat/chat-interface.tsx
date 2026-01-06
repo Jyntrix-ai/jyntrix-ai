@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { MessageItem } from './message-item';
 import { ChatInput } from './chat-input';
+import { StreamingMessage } from './streaming-message';
 import { useChatStore } from '@/stores/chat.store';
 import { useChat } from '@/hooks/use-chat';
 
@@ -18,25 +19,99 @@ export function ChatInterface({
   isNewChat = false,
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, isStreaming } = useChatStore();
-  const { sendMessage, isLoading } = useChat(conversationId);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const lastMessageCountRef = useRef(0);
+  const scrollToBottomRef = useRef<(instant?: boolean) => void>(() => {});
 
-  // Auto-scroll to bottom when new messages arrive
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const messages = useChatStore((state) => state.messages);
+  const isStreaming = useChatStore((state) => state.isStreaming);
+  const streamingMessageId = useChatStore((state) => state.streamingMessageId);
+
+  // Track if user is near bottom of scroll
+  const checkIfNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+
+    const threshold = 100;
+    const position = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return position < threshold;
   }, []);
 
+  // Scroll to bottom with appropriate behavior
+  const scrollToBottom = useCallback((instant = false) => {
+    if (!messagesEndRef.current) return;
+
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: instant ? 'instant' : 'smooth',
+        block: 'end',
+      });
+    });
+  }, []);
+
+  // Keep ref updated for use in callbacks
+  scrollToBottomRef.current = scrollToBottom;
+
+  const { sendMessage, isLoading } = useChat(conversationId, {
+    onStreamChunk: () => {
+      // Scroll to bottom during streaming if user was near bottom
+      if (isNearBottomRef.current) {
+        scrollToBottomRef.current(true);
+      }
+    },
+  });
+
+  // Memoize static messages - exclude the streaming message
+  const staticMessages = useMemo(() => {
+    if (!isStreaming || !streamingMessageId) {
+      return messages;
+    }
+    // Exclude the placeholder message being streamed
+    return messages.filter((m) => m.id !== streamingMessageId);
+  }, [messages, isStreaming, streamingMessageId]);
+
+  // Track scroll position
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      isNearBottomRef.current = checkIfNearBottom();
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [checkIfNearBottom]);
+
+  // Scroll on new messages (not during streaming content updates)
+  useEffect(() => {
+    // Only scroll when message count changes
+    if (messages.length !== lastMessageCountRef.current) {
+      lastMessageCountRef.current = messages.length;
+
+      // Use smooth scroll for new messages, but only if user is near bottom
+      if (isNearBottomRef.current) {
+        // Use instant scroll during streaming for better performance
+        scrollToBottom(isStreaming);
+      }
+    }
+  }, [messages.length, isStreaming, scrollToBottom]);
+
+  // Keep scrolled to bottom during streaming if user was at bottom
+  useEffect(() => {
+    if (isStreaming && isNearBottomRef.current) {
+      // Use instant scroll during active streaming
+      scrollToBottom(true);
+    }
+  }, [isStreaming, scrollToBottom]);
 
   const handleSendMessage = async (content: string) => {
     if (isNewChat && onFirstMessage) {
       // For new chats, create the conversation first
       try {
         const newConversationId = await onFirstMessage(content);
-        // The message will be sent after navigation
-        // Store the pending message to be sent
+        // Store the pending message to be sent after navigation
         sessionStorage.setItem('pendingMessage', content);
         sessionStorage.setItem('pendingConversationId', newConversationId);
       } catch {
@@ -62,8 +137,11 @@ export function ChatInterface({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 smooth-scroll">
-        {messages.length === 0 ? (
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scroll-smooth"
+      >
+        {messages.length === 0 && !isStreaming ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center mb-6">
               <svg
@@ -109,13 +187,13 @@ export function ChatInterface({
           </div>
         ) : (
           <>
-            {messages.map((message, index) => (
-              <MessageItem
-                key={message.id || index}
-                message={message}
-                isStreaming={isStreaming && index === messages.length - 1 && message.role === 'assistant'}
-              />
+            {/* Render static (non-streaming) messages - these won't re-render during streaming */}
+            {staticMessages.map((message) => (
+              <MessageItem key={message.id} message={message} />
             ))}
+
+            {/* Render streaming message separately - only this re-renders during streaming */}
+            {isStreaming && <StreamingMessage />}
           </>
         )}
         <div ref={messagesEndRef} />

@@ -29,6 +29,10 @@ interface ChatState {
   messages: Message[];
   isStreaming: boolean;
 
+  // Streaming optimization - separate state for streaming content
+  streamingContent: string;
+  streamingMessageId: string | null;
+
   // Actions
   setCurrentConversationId: (id: string | null) => void;
   setConversations: (conversations: Conversation[]) => void;
@@ -43,6 +47,11 @@ interface ChatState {
 
   setIsStreaming: (isStreaming: boolean) => void;
 
+  // Streaming optimization actions
+  startStreaming: (messageId: string) => void;
+  appendStreamingContent: (chunk: string) => void;
+  finalizeStreamingMessage: () => void;
+
   // Reset
   reset: () => void;
 }
@@ -52,6 +61,8 @@ const initialState = {
   conversations: [],
   messages: [],
   isStreaming: false,
+  streamingContent: '',
+  streamingMessageId: null as string | null,
 };
 
 export const useChatStore = create<ChatState>()(
@@ -135,6 +146,44 @@ export const useChatStore = create<ChatState>()(
         // Streaming
         setIsStreaming: (isStreaming) =>
           set({ isStreaming }, false, 'setIsStreaming'),
+
+        // Streaming optimization - only update streamingContent, not messages array
+        startStreaming: (messageId) =>
+          set(
+            { streamingMessageId: messageId, streamingContent: '', isStreaming: true },
+            false,
+            'startStreaming'
+          ),
+
+        appendStreamingContent: (chunk) =>
+          set(
+            (state) => ({ streamingContent: state.streamingContent + chunk }),
+            false,
+            'appendStreamingContent'
+          ),
+
+        finalizeStreamingMessage: () =>
+          set(
+            (state) => {
+              if (!state.streamingMessageId) return state;
+
+              // Update the message content with the accumulated streaming content
+              const messages = state.messages.map((msg) =>
+                msg.id === state.streamingMessageId
+                  ? { ...msg, content: state.streamingContent }
+                  : msg
+              );
+
+              return {
+                messages,
+                streamingContent: '',
+                streamingMessageId: null,
+                isStreaming: false,
+              };
+            },
+            false,
+            'finalizeStreamingMessage'
+          ),
 
         // Reset
         reset: () => set(initialState, false, 'reset'),

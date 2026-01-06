@@ -18,19 +18,43 @@ export function ChatInput({
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previousHeightRef = useRef<number>(48);
+  const rafIdRef = useRef<number>(0);
 
-  // Auto-resize textarea
+  // Auto-resize textarea with requestAnimationFrame for smooth reflow
   const adjustTextareaHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
+    // Cancel any pending RAF
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+
+    rafIdRef.current = requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      // Temporarily reset to auto to get scrollHeight
       textarea.style.height = 'auto';
       const newHeight = Math.min(textarea.scrollHeight, 200);
-      textarea.style.height = `${newHeight}px`;
-    }
+
+      // Only update if height actually changed
+      if (newHeight !== previousHeightRef.current) {
+        previousHeightRef.current = newHeight;
+        textarea.style.height = `${newHeight}px`;
+      } else {
+        // Restore previous height if no change
+        textarea.style.height = `${previousHeightRef.current}px`;
+      }
+    });
   }, []);
 
   useEffect(() => {
     adjustTextareaHeight();
+    // Cleanup RAF on unmount
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
   }, [message, adjustTextareaHeight]);
 
   const handleSubmit = useCallback(() => {
@@ -40,7 +64,8 @@ export function ChatInput({
       setMessage('');
       // Reset textarea height
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = '48px';
+        previousHeightRef.current = 48;
       }
     }
   }, [message, disabled, isLoading, onSend]);
